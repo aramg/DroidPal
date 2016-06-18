@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<anim set="11" id="2130837514">
+<stage>
+	<translate what="0" fromY="iy+sh" len="500" />
+	<translate what="1" fromY="iy+sh" len="500" />
+	<translate what="2" fromY="iy+sh" len="500" />
+	<translate what="3" fromY="iy+sh" len="500" />
+	<translate what="4" fromY="iy+sh" len="500" />
+	<translate what="5" fromY="iy+sh" len="500" />
+</stage>
+
+<!-- 
+Scale test (Wink)
+* All scale animations must be followed by a translation to pin the obj in place
+* After scaling the X/Y will change if the pivot points arent at 0/0 - so be careful
+**
+* Translating to the unscaled position is sufficient, just like rotations below! :) 
+** -->
+<stage>
+	<scale what="6" toY="30" len="200" />
+	<translate what="6" len="1" /> 
+</stage>
+<stage>
+	<scale what="6" fromY="30" len="200" />
+	<translate what="6" len="1" /> 
+</stage>
+
+
+<!-- Rotate test (Hand wave) 
+ * Must translate to un-rotated (idle) position in all cases --> 
+<stage>
+	<translate what="2" toY="iy-150" len="200" />
+</stage>
+<stage>
+	<rotate what="2" toY="-30" pivotX="ow/2" pivotY="oh" len="100" />
+	<translate what="2" fromY="iy-150" toY="iy-150" len="1" />
+</stage> 
+<stage>
+	<rotate what="2" fromY="-30" toY="30" pivotX="ow/2" pivotY="oh" len="200"  />
+	<translate what="2" fromY="iy-150" toY="iy-150" len="1" />
+</stage>
+<stage>
+	<rotate what="2" fromY="30" pivotX="ow/2" pivotY="oh" len="200"  />
+	<translate what="2" fromY="iy-150" toY="iy" len="300" />
+</stage> 
+
+<!-- Rotate test (The head; Eyes must match) -->
+<stage>
+	<scale what="6" toY="30" len="200" delay="100" />
+	<rotate what="0" toY="15" pivotX="ow" pivotY="oh" len="300" />
+	<translate what="0" len="1" toY="iy-10" />
+</stage>
+<stage>
+	<scale what="6" fromY="30" len="200" />	
+	<rotate what="0" fromY="15" pivotX="ow" pivotY="oh" len="300" />
+	<translate what="0" len="1" fromY="iy-10" />
+</stage>
+</anim>

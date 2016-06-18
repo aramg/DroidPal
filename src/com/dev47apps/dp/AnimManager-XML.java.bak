@@ -1,0 +1,429 @@
+package com.dev47apps.dp;
+
+import java.io.InputStream;
+
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserFactory;
+
+import de.congrace.exp4j.PostfixExpression;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.view.animation.Animation;
+import android.view.animation.AnimationSet;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.Interpolator;
+import android.view.animation.OvershootInterpolator;
+import android.view.animation.RotateAnimation;
+import android.view.animation.ScaleAnimation;
+import android.view.animation.Transformation;
+import android.view.animation.TranslateAnimation;
+import android.view.animation.Animation.AnimationListener;
+
+//http://www.jondev.net/articles/Android_XML_SAX_Parser_Example
+public class AnimManager {
+
+	XmlPullParser xpp;
+
+	static final int aSz = 10;
+	static final int extras = 2;
+	static final int sz = aSz + extras;
+	static final int relativeOffsetDiff = 6; // R Eye = 6th element in IdleOffsets, and so on
+	AnimationSet animSet[] = new AnimationSet[sz];
+	Bitmap aBmps[] = new Bitmap[sz];
+	Transformation aTransforms[] = new Transformation[sz];
+	int aIdleOffsets[][] = new int[sz][2];
+	int aRelativeOffsets[][] = new int[4][2]; // Eyes+Anteana relative to the head
+	int extRelativeOffsets[][] = new int[sz][2];
+
+	int mScreenWidth, mScreenHeight;
+
+	DecelerateInterpolator d = new DecelerateInterpolator();
+	OvershootInterpolator  o = new OvershootInterpolator(0.1f);
+	AnimationListener aListener;
+
+	Context context;
+
+	public AnimManager(AnimationListener l, Context c)
+	{
+		aListener = l;
+		try {
+			xpp = XmlPullParserFactory.newInstance().newPullParser();
+		} catch (Exception e) {
+			DroidPalWP.log("Fatal Error (C): " + e);
+		}
+		// Load the bitmaps
+		for (int i = 0; i < aTransforms.length; i++){
+			aTransforms[i]= new Transformation();
+			if (i < aSz)
+				aBmps[i] = BitmapFactory.decodeResource(c.getResources(), R.drawable.a01head + i);
+		}
+		context = c;
+	}
+
+	boolean LoadAnim(InputStream s){
+		boolean ret = true;
+		int i, set = 0;
+
+		for (i = aSz; i < sz; i ++)// Clear all extra objects
+			aBmps[i] = null;
+
+		try {
+			xpp.setInput(s, null);
+			GetNextEvent(XmlPullParser.START_TAG, "root tag not found");
+			for (i = 0; i < xpp.getAttributeCount(); i++)
+			{
+				if (xpp.getAttributeName(i).equalsIgnoreCase("set")){
+					set = Integer.parseInt(xpp.getAttributeValue(i));
+				}
+				else if (xpp.getAttributeName(i).equalsIgnoreCase("id"))
+				{
+					aBmps[set] = BitmapFactory.decodeResource(
+							context.getResources(),
+							Integer.parseInt(xpp.getAttributeValue(i)));
+				}
+			}
+		} catch (Exception e) {
+			DroidPalWP.log("Fatal Error (1): " + e.getMessage());
+			ret = false;
+		}
+		return ret;
+	}
+
+	int LoadNextStage(){
+		int i, stageDelay = 0;
+		int longestAnimIndex = 0;
+		long longestAnim = 0;
+
+		DroidPalWP.log("--- Stage ---");
+		try {
+			// Look for the stage opening tag
+			GetNextEvent(XmlPullParser.START_TAG, "No more stages");
+			if (xpp.getAttributeCount() > 0 && xpp.getAttributeName(0).equalsIgnoreCase("delay"))
+			{
+				stageDelay = Integer.parseInt(xpp.getAttributeValue(0));
+			}
+
+			// Clear all the animation sets
+			for (i = 0; i < animSet.length; i++){
+				animSet[i] = null;
+			}
+
+			// Get the first animation is this sate
+			GetNextEvent(XmlPullParser.START_TAG, "no animations found");
+			while (true)
+			{
+				int animDelay = 0, animLen = 0, relObj = -1, whichAnim = -1;
+				int fromX = -1, fromY = -1, toX = -1, toY = -1;
+				int pivotX = -1, pivotY = -1;
+				String str;
+				Animation anim = null;
+				Interpolator ipr = null;
+
+				// Cycle through the parameters
+				DroidPalWP.log("- " + xpp.getName());
+				for (i=0; i < xpp.getAttributeCount(); i++)
+				{
+					str = xpp.getAttributeName(i);
+					DroidPalWP.log(" - " + str + "=" + xpp.getAttributeValue(i));
+					if (str.equalsIgnoreCase("what")){
+						whichAnim = Integer.parseInt(xpp.getAttributeValue(i));
+						relObj = whichAnim;
+					}
+					else if (str.equalsIgnoreCase("relobj")){
+						relObj = Integer.parseInt(xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("len")){
+						animLen = Integer.parseInt(xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("delay")){
+						animDelay = Integer.parseInt(xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("ipr")){
+						switch(xpp.getAttributeValue(i).charAt(0)){
+						case 'd': ipr = d; break;
+						case 'o': ipr = o; break;
+						}
+					}
+					else if (str.equalsIgnoreCase("fromX")){
+						fromX = ParseStringVars(relObj, xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("fromY")){
+						fromY = ParseStringVars(relObj, xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("toX")){
+						toX = ParseStringVars(relObj, xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("toY")){
+						toY = ParseStringVars(relObj, xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("pivotX")){
+						pivotX = ParseStringVars(relObj, xpp.getAttributeValue(i));
+					}
+					else if (str.equalsIgnoreCase("pivotY")){
+						pivotY = ParseStringVars(relObj, xpp.getAttributeValue(i));
+					}
+					else {
+						DroidPalWP.log("WARN: Unrecognized attribute");
+					}
+				}
+				if (whichAnim < 0){
+					throw new Exception("Missing attribute 'WHAT'");
+				}
+
+				switch (xpp.getName().length()){
+				case 5: // 'scale' = 5 characters
+					if (fromX < 0) fromX = 100;
+					if (fromY < 0) fromY = 100;
+					if (toX < 0) toX = 100;
+					if (toY < 0) toY = 100;
+					if (pivotX < 0) pivotX = 50;
+					if (pivotY < 0) pivotY = 50;
+					DroidPalWP.log("Scale fromX="+fromX + " toX=" + toX +
+							" fromY=" + fromY + " toY=" + toY +
+							" pivotX=" + pivotX + " pivotY="+pivotY);
+					anim = new ScaleAnimation((float)fromX/100, (float)toX/100,
+							(float)fromY/100, (float)toY/100,
+							ScaleAnimation.RELATIVE_TO_SELF, (float)pivotX/100,
+							ScaleAnimation.RELATIVE_TO_SELF, (float)pivotY/100);
+				break;
+				case 6: // rotate
+					if (fromY == -1) fromY = 0; // This is the DEGREE
+					if (toY == -1)   toY = 0;   // Can be negative
+
+					if (pivotX < 0) pivotX = 0;
+					if (pivotY < 0) pivotY = 0;
+					DroidPalWP.log("Rotate fromDeg="+fromY + " toDeg=" + toY +
+							" pivotX=" + pivotX + " pivotY="+pivotY);
+					anim = new RotateAnimation((float)fromY, (float)toY, pivotX, pivotY);
+				break;
+				case 9: // 'translate' = 9 characters
+					if (fromX < 0) fromX = aIdleOffsets[whichAnim][0];
+					if (fromY < 0) fromY = aIdleOffsets[whichAnim][1];
+
+					if (toX < 0) toX = aIdleOffsets[whichAnim][0];
+					if (toY < 0) toY = aIdleOffsets[whichAnim][1];
+					DroidPalWP.log("Translate fromX="+fromX + " toX=" + toX +
+							" fromY=" + fromY + " toY=" + toY);
+
+					anim =  new TranslateAnimation(
+							Animation.ABSOLUTE, fromX, Animation.ABSOLUTE, toX,
+							Animation.ABSOLUTE, fromY, Animation.ABSOLUTE, toY);
+				break;
+				default:
+					throw new Exception("Invalid animation");
+				}
+
+				if (animLen <= 0){
+					throw new Exception("Animation has 0 length!");
+				}
+
+				anim.setStartOffset(animDelay);
+				anim.setDuration(animLen);
+				if (ipr != null)
+					anim.setInterpolator(ipr);
+
+				if (animSet[whichAnim] == null){
+					animSet[whichAnim] = new AnimationSet(false);
+				}
+				animSet[whichAnim].addAnimation(anim);
+				anim = null;
+
+				// Animations on the head automatically appy to the eyes/antenna as well
+				if (whichAnim == 0)
+				{
+					DroidPalWP.log("Applying HEAD animations to relative objects");
+
+					for (i = 0; i < aRelativeOffsets.length; i++)
+					{
+						// Antenas?
+						//
+						if (xpp.getName().length() == 9) {
+							DroidPalWP.log("** Translate fromX="+ (fromX + aRelativeOffsets[i][0]) +
+								" toX=" + (toX  + aRelativeOffsets[i][0]) +
+								" fromY=" + (fromY + aRelativeOffsets[i][1])
+								+ " toY=" +	(toY   + aRelativeOffsets[i][1]));
+							anim =  new TranslateAnimation(
+								Animation.ABSOLUTE, fromX + aRelativeOffsets[i][0],
+								Animation.ABSOLUTE, toX   + aRelativeOffsets[i][0],
+								Animation.ABSOLUTE, fromY + aRelativeOffsets[i][1],
+								Animation.ABSOLUTE, toY   + aRelativeOffsets[i][1]);
+						}
+						else if (xpp.getName().length() == 6)
+						{
+							DroidPalWP.log("** Rotate fromDeg="+fromY + " toDeg=" + toY +
+									" pivotX=" + (pivotX - aRelativeOffsets[i][0]) +
+									" pivotY=" + (pivotY - aRelativeOffsets[i][1]));
+							anim = new RotateAnimation((float)fromY, (float)toY,
+									pivotX - aRelativeOffsets[i][0],
+									pivotY - aRelativeOffsets[i][1]);
+						}
+						else
+						{
+							break; // no Scale support
+						}
+
+						anim.setStartOffset(animDelay);
+						anim.setDuration(animLen);
+						if (ipr != null) anim.setInterpolator(ipr);
+
+						int index = i + relativeOffsetDiff;
+						if (animSet[index] == null)  {
+							animSet[index] = new AnimationSet(false);
+						}
+						animSet[index].addAnimation(anim);
+					}
+				}
+				// Objects tied to R Hand
+				else if (whichAnim == 2 && aBmps[10] != null)
+				{
+					DroidPalWP.log("Applying R HAND animations to relative object");
+					if (xpp.getName().length() == 9) {
+						anim =  new TranslateAnimation(
+							Animation.ABSOLUTE, fromX + extRelativeOffsets[0][0],
+							Animation.ABSOLUTE, toX   + extRelativeOffsets[0][0],
+							Animation.ABSOLUTE, fromY + extRelativeOffsets[0][1],
+							Animation.ABSOLUTE, toY   + extRelativeOffsets[0][1]);
+					}
+					else if (xpp.getName().length() == 6)
+					{
+						anim = new RotateAnimation((float)fromY, (float)toY,
+								pivotX - extRelativeOffsets[0][0],
+								pivotY - extRelativeOffsets[0][1]);
+					}
+
+					if (anim != null)
+					{
+						anim.setStartOffset(animDelay);
+						anim.setDuration(animLen);
+						if (ipr != null) anim.setInterpolator(ipr);
+
+						if (animSet[10] == null)  {
+							animSet[10] = new AnimationSet(false);
+						}
+						animSet[10].addAnimation(anim);
+					}
+				}
+
+				if (animSet[whichAnim].getDuration() > longestAnim){
+					longestAnim = animSet[whichAnim].getDuration();
+					longestAnimIndex = whichAnim;
+				}
+
+				GetNextEvent(XmlPullParser.END_TAG, "Tag not closed properly");
+				// Look for the next animation in this stage
+				// if we get a 2nd END_TAG, then we're at the end of the stage
+				do xpp.next(); while (xpp.getEventType() == XmlPullParser.TEXT);
+				if (xpp.getEventType() == XmlPullParser.END_TAG){
+					DroidPalWP.log("--- // Stage ---");
+					break;
+				}
+			}
+
+			animSet[longestAnimIndex].setAnimationListener(aListener);
+			for (i = 0; i < animSet.length; i++){
+				if (animSet[i] != null)
+				{
+					animSet[i].setFillEnabled(true);
+					animSet[i].setFillBefore(false);
+					animSet[i].setFillAfter(false);
+					animSet[i].initialize(aBmps[i].getWidth(), aBmps[i].getHeight(), mScreenWidth, mScreenHeight);
+				}
+			}
+		} catch (Exception e) {
+			DroidPalWP.log("Error (2): " + e);
+			e.printStackTrace();
+			stageDelay = -1;
+		}
+		return stageDelay;
+	}
+
+	// Replace variable names with actual values in the xml descriptions
+	// Calculate using: http://projects.congrace.de/exp4j
+	int ParseStringVars(int obj, String expression) throws Exception
+	{
+		if (obj < 0) throw new Exception("Attribute 'WHAT' not specified");
+
+	//	float values[] = new float[9];
+	//	aTransforms[obj].getMatrix().getValues(values);
+		return (int) PostfixExpression.fromInfix("f(sw,sh,ow,oh,ix,iy)=" + expression)//cx,cy
+			.calculate(mScreenWidth, mScreenHeight,
+					aBmps[obj].getWidth(), aBmps[obj].getHeight(),
+					aIdleOffsets[obj][0], aIdleOffsets[obj][1]);
+	//				(int) values[2], (int) values[5]);
+	}
+
+	// Get next XPP event, while skipping any whitespace
+	void GetNextEvent(int expected, String err) throws Exception{
+		do xpp.next(); while (xpp.getEventType() == XmlPullParser.TEXT);
+		if (xpp.getEventType() != expected){
+			throw new Exception(err + ".." + xpp.getEventType());
+		}
+	}
+
+	void SetScreenSize(int w, int h){
+		mScreenWidth = w;
+		mScreenHeight = h;
+		aIdleOffsets[0][0] = w -350 +  90; aIdleOffsets[0][1] = h -400 +  55; // HEAD
+		aIdleOffsets[1][0] = w -350 +  90; aIdleOffsets[1][1] = h -400 + 165; // BODY
+		aIdleOffsets[2][0] = w -350 +  30; aIdleOffsets[2][1] = h -400 + 165; // R ARM
+		aIdleOffsets[3][0] = w -350 + 313; aIdleOffsets[3][1] = h -400 + 165; // L ARM
+		aIdleOffsets[4][0] = w -350 + 130; aIdleOffsets[4][1] = h -400 + 340; // R LEG
+		aIdleOffsets[5][0] = w -350 + 210; aIdleOffsets[5][1] = h -400 + 340; // L LEG
+		aIdleOffsets[6][0] = w -350 + 151; aIdleOffsets[6][1] = h -400 + 100; // R EYE
+		aIdleOffsets[7][0] = w -350 + 231; aIdleOffsets[7][1] = h -400 + 100; // L EYE
+		aIdleOffsets[8][0] = w -350 + 110; aIdleOffsets[8][1] = h -400 + 35; // R ANTENTA
+		aIdleOffsets[9][0] = w -350 + 260; aIdleOffsets[9][1] = h -400 + 35; // L ANT..
+
+		// Parts relative to each other (ie eyes + antenta)
+		for (int i = 0; i < aRelativeOffsets.length; i++){
+			aRelativeOffsets[i][0] = aIdleOffsets[i+relativeOffsetDiff][0] - aIdleOffsets[0][0];
+			aRelativeOffsets[i][1] = aIdleOffsets[i+relativeOffsetDiff][1] - aIdleOffsets[0][1];
+		}
+
+		// Extra object relative to various parts
+		// R Hand
+		aIdleOffsets[10][0]= w -350 +  30; aIdleOffsets[10][1]= h -400 + 160 + aBmps[2].getHeight();
+		extRelativeOffsets[0][0] = aIdleOffsets[10][0] - aIdleOffsets[2][0];
+		extRelativeOffsets[0][1] = aIdleOffsets[10][1] - aIdleOffsets[2][1];
+
+		 // L Hand
+		aIdleOffsets[11][0]= w -350 + 315; aIdleOffsets[11][1]= h -400 + 160 + aBmps[3].getHeight();
+		extRelativeOffsets[1][0] = aIdleOffsets[11][0] - aIdleOffsets[3][0];
+		extRelativeOffsets[1][1] = aIdleOffsets[11][1] - aIdleOffsets[3][1];
+	}
+
+	void drawFrame(Canvas c){
+		int i;
+		for (i = 0; i < aSz; i ++)
+		{
+			//c.drawBitmap(aBmps[i], aIdleOffsets[i][0], aIdleOffsets[i][1], null);
+			if (animSet[i] != null)
+			{
+				aTransforms[i].clear();
+				animSet[i].getTransformation(System.currentTimeMillis(), aTransforms[i]);
+			}
+			c.drawBitmap(aBmps[i], aTransforms[i].getMatrix(), null);
+		}
+
+		// Do the extras seperately to save the bmp==null comparison
+		// which will always be false for the above cases
+		for (; i < sz; i++){
+			if (aBmps[i] != null)
+			{
+				if (animSet[i] != null)
+				{
+					aTransforms[i].clear();
+					animSet[i].getTransformation(System.currentTimeMillis(), aTransforms[i]);
+				}
+				c.drawBitmap(aBmps[i], aTransforms[i].getMatrix(), null);
+			}
+		}
+
+		/*float values[] = new float[9];
+		aTransforms[i].getMatrix().getValues(values);
+		DroidPalWP.log("$Obj " + i + " X=" + values[2] + " Y=" + values[5]);*/
+	}
+}
